@@ -1,0 +1,49 @@
+---
+title: "Supplemental table 1"
+output: html_document
+---
+
+```{r}
+library(tidyverse)
+```
+
+```{r library table, echo=FALSE}
+# indicates viruses defined at the genus-level, rather than species-level
+genus_level_annots <- tibble(
+  `Taxon ID` = c("687331",
+                 "687332",
+                 "687333"),
+  Species=c("Alphatorquevirus (Torque teno viruses)*",
+            "Betatorquevirus (Torque teno mini viruses)*",
+            "Gammatorquevirus (Torque teno midi viruses)*"),
+  `Number of Peptides` = c(194,
+                           37,
+                           59))
+species_TTV <- c("68887", "93678", "432261")
+
+
+PV2Tmeta <- read_tsv("data/PV2T_meta.tsv", col_types = c("ccccccccc")) %>%
+  group_by(SpeciesID) %>%
+  mutate(num_peptides_per_taxon = n()) %>%
+  ungroup()
+
+PV2species <- read_csv("data/PV2species.csv", col_names = F, col_types = c("cc")) %>%
+  set_names(c("Species", "annotation")) %>%
+  filter(!(annotation == "10566"))
+
+PV2Tannot <- read_csv("data/PV2Tannotation.csv", col_types = c("ccccccc")) %>%
+  group_by(annotation) %>%
+  mutate(num_peptides_per_taxon = n()) %>%
+  ungroup()
+
+PV2_summary <- left_join(PV2species, PV2Tmeta, by=c("annotation"="SpeciesID")) %>%
+  select(Species, annotation, num_peptides_per_taxon) %>%
+  distinct() %>%
+  set_names("Species", "Taxon ID", "Number of Peptides") %>%
+  filter(!(`Taxon ID` %in% species_TTV)) 
+
+supp_table1 <- bind_rows(PV2_summary, genus_level_annots) %>%
+  arrange(Species)
+  
+# write_csv(supp_table1, "tables/supplemental_table_1.csv")
+```

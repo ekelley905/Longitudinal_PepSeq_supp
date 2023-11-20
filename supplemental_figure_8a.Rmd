@@ -1,0 +1,137 @@
+---
+title: "Supplemental figure 8a boxplots"
+output: html_document
+---
+
+```{r}
+library(tidyverse)
+library(patchwork)
+library(ggbeeswarm)
+library(ggpubr)
+```
+
+
+```{r VAE summary}
+ce_table <- read_csv("data/CEbyPtable_byVAEs.csv", na = "0", col_types = "c") %>%
+  rename(annotation = ...1)
+
+subject_meta <- read_csv("data/pca_factors.csv") %>%
+  distinct(sampleID, .keep_all = T) %>%
+  select(
+    SubjectID, Sex, AgeAtLastBirthDay, Scriba2018ProgressorOrControl,
+    Visit
+  ) %>%
+  distinct(SubjectID, .keep_all = T)
+
+ce_table_lib_VAE_sum <- ce_table %>%
+  pivot_longer(., cols = !annotation, names_to = "interval", values_to = "LE_peptides") %>%
+  filter(!is.na(LE_peptides)) %>%
+  mutate(Subject_ID = str_sub(interval, 2, 7)) %>%
+  mutate(LE_peps_per_VAE = str_count(LE_peptides, "PV2T_")) %>%
+  group_by(Subject_ID) %>%
+  summarize(
+    VAEs_count_per_subject = n(),
+    median_LE_peps_per_VAE_per_subject = median(LE_peps_per_VAE)
+  ) %>%
+  ungroup() %>%
+  left_join(subject_meta, by = c("Subject_ID" = "SubjectID")) %>%
+  mutate(Scriba2018ProgressorOrControl = case_when(
+    Scriba2018ProgressorOrControl == "control" ~ "non-progressor",
+    Scriba2018ProgressorOrControl == "progressor" ~ "progressor"
+  ))
+
+ce_table_lib_VAE_sum_fact <- ce_table_lib_VAE_sum %>%
+  mutate(
+    Subject_ID = as.factor(Subject_ID),
+    Sex = as.factor(Sex),
+    AgeAtLastBirthDay = as.factor(AgeAtLastBirthDay),
+    Scriba2018ProgressorOrControl = as.factor(Scriba2018ProgressorOrControl)
+  )
+```
+
+
+```{r man plot scales}
+sex_palette <- c("#1B9E77", "#D95F02")
+visit_palette <- c("#7570B3", "#E7298A", "#66A61E", "#E6AB02")
+age_palette <- c("#C6DBEF", "#9ECAE1", "#6BAED6", "#4292C6", "#2171B5", "#08519C", "#08306B")
+disease_palette <- c("#CCEBC5", "#6A3D9A")
+```
+
+
+```{r ggpubr boxplots}
+# try ggpubr boxplots
+vae_sex_gp <- ggboxplot(ce_table_lib_VAE_sum,
+  x = "Sex",
+  y = "VAEs_count_per_subject",
+  color = "Sex",
+  palette = sex_palette
+) + stat_compare_means(aes(group = Sex), label = "p.format") + scale_y_continuous(limits = c(0, 20)) + theme_pubr(base_size = 17.5) + theme(legend.position = "none") +
+  geom_beeswarm(data = ce_table_lib_VAE_sum, aes(x = Sex, y = VAEs_count_per_subject, color = Sex), cex=1.9) + ylab("# VAEs") + xlab("")
+
+vae_sex_gp
+
+ce_table_lib_VAE_sum$AgeAtLastBirthDay <- as.factor(ce_table_lib_VAE_sum$AgeAtLastBirthDay)
+vae_age_gp <- ggboxplot(ce_table_lib_VAE_sum,
+  x = "AgeAtLastBirthDay",
+  y = "VAEs_count_per_subject",
+  color = "AgeAtLastBirthDay",
+  palette = age_palette
+) + stat_compare_means(aes(group = AgeAtLastBirthDay), label = "p.signif") + scale_y_continuous(limits = c(0, 20)) + theme_pubr(base_size = 17.5) + theme_pubr(base_size = 17.5) + theme(legend.position = "none") +
+  geom_beeswarm(data = ce_table_lib_VAE_sum, aes(x = AgeAtLastBirthDay, y = VAEs_count_per_subject, color = as.factor(AgeAtLastBirthDay)), cex=1.9) + xlab("") + ylab("")
+
+vae_age_gp 
+
+
+vae_disease_gp <- ggboxplot(ce_table_lib_VAE_sum,
+  x = "Scriba2018ProgressorOrControl",
+  y = "VAEs_count_per_subject",
+  color = "Scriba2018ProgressorOrControl",
+  palette = disease_palette
+) + stat_compare_means(aes(group = Scriba2018ProgressorOrControl), label = "p.format") + scale_y_continuous(limits = c(0, 20)) + theme_pubr(base_size = 17.5) + theme(legend.position = "none") +
+  geom_beeswarm(data = ce_table_lib_VAE_sum, aes(x = Scriba2018ProgressorOrControl, y = VAEs_count_per_subject, color = Scriba2018ProgressorOrControl), cex=1.9) + xlab("") + ylab("")
+
+vae_disease_gp
+```
+
+
+```{r ggpubr le boxplots}
+vae_le_sex_gp <- ggboxplot(ce_table_lib_VAE_sum,
+  x = "Sex",
+  y = "median_LE_peps_per_VAE_per_subject",
+  color = "Sex",
+  palette = sex_palette
+) + stat_compare_means(aes(group = Sex), label = "p.signif") + scale_y_continuous(limits = c(0, 80)) + theme_pubr(base_size = 17.5) + theme(legend.position = "none") +
+  geom_beeswarm(data = ce_table_lib_VAE_sum, aes(x = Sex, y = median_LE_peps_per_VAE_per_subject, color = Sex), cex = 1.75) + ylab("Median leading-edge peptides") + xlab("")
+
+vae_le_sex_gp
+
+
+vae_le_age_gp <- ggboxplot(ce_table_lib_VAE_sum,
+  x = "AgeAtLastBirthDay",
+  y = "median_LE_peps_per_VAE_per_subject",
+  color = "AgeAtLastBirthDay",
+  palette = age_palette
+) + stat_compare_means(aes(group = AgeAtLastBirthDay), label = "p.signif") + scale_y_continuous(limits = c(0, 80)) + theme_pubr(base_size = 17.5) + theme(legend.position = "none") +
+  geom_beeswarm(data = ce_table_lib_VAE_sum, aes(x = AgeAtLastBirthDay, y = median_LE_peps_per_VAE_per_subject, color = as.factor(AgeAtLastBirthDay)), cex=1.9) + xlab("") + ylab("")
+
+vae_le_age_gp
+
+
+vae_le_disease_gp <- ggboxplot(ce_table_lib_VAE_sum,
+  x = "Scriba2018ProgressorOrControl",
+  y = "median_LE_peps_per_VAE_per_subject",
+  color = "Scriba2018ProgressorOrControl",
+  palette = disease_palette
+) + stat_compare_means(aes(group = Scriba2018ProgressorOrControl), label = "p.signif") + scale_y_continuous(limits = c(0, 80)) + theme_pubr(base_size = 17.5) + theme(legend.position = "none") +
+  geom_beeswarm(data = ce_table_lib_VAE_sum, aes(x = Scriba2018ProgressorOrControl, y = median_LE_peps_per_VAE_per_subject, color = Scriba2018ProgressorOrControl), cex=1.9) + xlab("") + ylab("")
+
+vae_le_disease_gp
+```
+
+
+```{r assemble gp boxplots}
+all_box <- vae_sex_gp + vae_age_gp + vae_disease_gp + vae_le_sex_gp + vae_le_age_gp + vae_le_disease_gp + plot_layout(ncol=3, nrow = 2)
+all_box
+
+# ggsave("figures/supplemental_figure_8a.pdf", all_box, device="pdf", width = 14,  height = 8)
+```

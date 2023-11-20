@@ -1,0 +1,102 @@
+---
+title: "Supplemental figure 7"
+output: html_document
+---
+
+```{r}
+library(tidyverse)
+library(seqinr)
+library(patchwork)
+library(RColorBrewer)
+```
+
+```{r import data}
+ce_table_lib_iedb <- read_csv("data/ce_table_lib_iedb.csv")
+ce_table_lib_unq_pep <- unique(ce_table_lib_iedb$Peptide)
+```
+
+```{r}
+le_pep_split <- ce_table_lib_unq_pep %>%
+  tibble(.) %>%
+  set_names("peptide_sequence") %>%
+  mutate(peptide_seq_split = str_split(peptide_sequence, "")) 
+
+le_pep_content <- le_pep_split$peptide_seq_split %>%
+   map_dfr(., ~AAstat(.x, plot=FALSE)$Compo) %>%
+  pivot_longer(cols = -`*`, names_to = "amino_acid", values_to = "count") %>%
+  group_by(amino_acid) %>%
+  summarise(sum_count = sum(count)) %>%
+  mutate(prop_aa = sum_count/sum(sum_count))
+
+pv1_aa_comp <- read_csv("data/PV1_aa_distribution.csv", col_names = F) %>%
+  set_names(c("amino_acid", "pv_unenrich_prop_aa"))
+
+le_pep_content_with_pv1 <- left_join(le_pep_content, pv1_aa_comp)
+
+p1 <- ggplot(le_pep_content_with_pv1, aes(x=pv_unenrich_prop_aa, y=prop_aa, label=amino_acid)) +
+  ylab("Proportion in leading-edge peptides") + xlab("Proportion in unselected virome library") + theme_bw() +
+  xlim(0,.11) + ylim(0,.11) +
+  theme(legend.position = "none") + geom_text() + geom_abline(slope = 1, intercept = 0, linetype="dashed")
+p1
+
+```
+
+```{r}
+PV2species <- read_csv("data/PV2species.csv", col_names = F) %>%
+  set_names(c("Species", "annotation"))
+# summarize species present in IEDB
+SARS2 <- c("10002370", "2697049")
+Rubella <- c("2846071")
+# sars2 and rubella taxon id's are different than our PepSeq taxon id's, so need to repair those. 
+
+iedb <- read_csv("data/epitope_table_export_1662584662.csv", skip = 1) %>%
+  filter(str_length(Description...3) > 8) %>%
+  mutate(`Parent Organism ID`= as.character(`Parent Organism ID`))
+
+iedb$`Parent Organism ID`[iedb$`Parent Organism ID` %in% SARS2] <- "694009"
+iedb$`Parent Organism ID`[iedb$`Parent Organism ID` %in% Rubella] <- "11041"
+names(iedb)[3] <- "peptide_sequence"
+
+iedb_species_summary <- PV2species %>%
+  mutate(species_in_iedb = annotation %in% iedb$`Parent Organism ID`)
+```
+
+```{r}
+# calculate proportions of LE peptides novel vs containing an iedb epitope (9mer or greater)
+
+# of unique leading edge peptides, how many are novel vs already present in iedb?
+le_pep_novel_vs_iedb <- ce_table_lib_iedb %>%
+  select(Species, Peptide, iedb_peptide) %>%
+  mutate(in_iedb = case_when(
+    is.na(iedb_peptide) ~ 0,
+    !(is.na(iedb_peptide)) ~ 1
+  )) %>%
+  select(Species, Peptide, in_iedb) %>% 
+  distinct(Peptide, .keep_all = T) %>%
+  group_by(Species) %>%
+  mutate(num_le_pep_species = n()) %>%
+  mutate(iedb = sum(in_iedb)) %>%
+  mutate(novel = num_le_pep_species - iedb) %>%
+  pivot_longer(cols = c(iedb, novel), names_to = "Set", values_to = "count") %>%
+  ungroup() %>%
+  select(-Peptide, -in_iedb) %>%
+  group_by(Species, Set) %>%
+  distinct() 
+
+le_pep_novel_vs_iedb_species_order <- le_pep_novel_vs_iedb %>%
+  pivot_wider(names_from = Set, values_from = count) %>%
+  left_join(iedb_species_summary) %>%
+  arrange(species_in_iedb, num_le_pep_species) %>%
+  pull(Species) %>% unique(.)
+
+  
+p2 <- ggplot(le_pep_novel_vs_iedb, aes(fill=Set, y=count, x=factor(Species, levels=le_pep_novel_vs_iedb_species_order))) + geom_bar(position="stack", stat="identity") + coord_flip() + scale_fill_brewer(palette = "Set1") + ylab("# of leading-edge peptides") + theme_bw() + xlab("Species") + theme(legend.position = "bottom")
+p2
+```
+
+
+```{r}
+p3 <- p1 + p2 + plot_layout(widths = c(7,5))
+p3
+# ggsave("figures/supplemental_figure_7.pdf", device = "pdf", width = 12, height = 6)
+```

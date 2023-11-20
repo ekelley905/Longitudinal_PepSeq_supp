@@ -1,0 +1,81 @@
+Species,Taxon ID,Number of Peptides
+Aichivirus A,72149,87
+Alphapapillomavirus 10,333754,62
+Alphapapillomavirus 3,333767,59
+Alphapapillomavirus 7,337042,85
+Alphapapillomavirus 9,337041,119
+Alphatorquevirus (Torque teno viruses)*,687331,194
+Betacoronavirus 1,694003,121
+Betapapillomavirus 1,337051,22
+Betapapillomavirus 2,333924,22
+Betatorquevirus (Torque teno mini viruses)*,687332,37
+California encephalitis orthobunyavirus,1933264,19
+Cardiovirus B,1821750,31
+Chikungunya virus,37124,27
+Cosavirus A,1330491,5
+Dengue virus,12637,171
+Enterovirus A,138948,464
+Enterovirus B,138949,566
+Enterovirus C,138950,575
+Enterovirus D,138951,238
+Gammatorquevirus (Torque teno midi viruses)*,687333,59
+Hepacivirus C,11103,1297
+Hepatitis B virus,10407,91
+Hepatovirus A,12092,86
+Human alphaherpesvirus 1,10298,718
+Human alphaherpesvirus 2,10310,620
+Human alphaherpesvirus 3,10335,81
+Human betaherpesvirus 5,10359,569
+Human betaherpesvirus 6,10368,314
+Human betaherpesvirus 7,10372,199
+Human bocavirus,329641,24
+Human coronavirus 229E,11137,51
+Human coronavirus HKU1,290028,81
+Human coronavirus NL63,277944,47
+Human gammaherpesvirus 4,10376,613
+Human gammaherpesvirus 8,37296,37
+Human immunodeficiency virus 1,11676,41
+Human mastadenovirus A,129875,209
+Human mastadenovirus B,108098,349
+Human mastadenovirus C,129951,351
+Human mastadenovirus D,130310,285
+Human metapneumovirus,162145,119
+Human orthopneumovirus,11250,147
+Human picobirnavirus,145856,7
+Human polyomavirus 1,1891762,20
+Human polyomavirus 2,1891763,18
+Human polyomavirus 3,1891764,19
+Human respirovirus 1,12730,25
+Human respirovirus 3,11216,178
+Human rubulavirus 2,1979160,35
+Human rubulavirus 4,1979161,41
+Influenza A virus,11320,313
+Influenza B virus,11520,142
+Influenza C virus,11552,30
+Japanese encephalitis virus,11072,122
+Lymphocytic choriomeningitis mammarenavirus,11623,10
+Mamastrovirus 1,1239565,73
+Mammalian orthoreovirus,351073,17
+Measles morbillivirus,11234,110
+Molluscum contagiosum virus,10279,27
+Mumps rubulavirus,1979165,36
+Norwalk virus,11983,410
+Orthohepevirus A,1678143,116
+Parechovirus A,1803956,78
+Primate T-lymphotropic virus 1,194440,84
+Rabies lyssavirus,11292,29
+Rhinovirus A,147711,1214
+Rhinovirus B,147712,537
+Rhinovirus C,463676,819
+Rotavirus A,28875,164
+Rotavirus B,28876,89
+Rotavirus C,36427,151
+Rotavirus H,1348384,90
+Rubella virus,11041,72
+Salivirus A,1330524,2
+Sapporo virus,95342,51
+Severe acute respiratory syndrome coronavirus,694009,173
+Vaccinia virus,10245,70
+West Nile virus,11082,108
+Yellow fever virus,11089,103
+Zika virus,64320,125

@@ -1,0 +1,330 @@
+---
+title: "Supplemental figure 4"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+library(tidyverse)
+library(readxl)
+library(lubridate)
+library(patchwork)
+```
+
+```{r import acs tables, echo=FALSE, warning=FALSE}
+clinical_data <- read_excel("data/clinical_data.xlsx")
+
+donors_65 <- read_csv("data/65donors.csv", col_names = F) %>%
+  set_names("SubjectID") %>%
+  mutate(Subject.ID = str_sub(SubjectID, 2))
+
+collection_dates <- read_csv("data/collectionDates.csv", col_types = "cccc") %>%
+  mutate(Collection.date = parse_date(Collection.date, "%Y-%m-%d"))
+```
+
+```{r acs table, echo=FALSE}
+# The above tables contain the whole cohort; for this study we just focused on 65 donors
+
+donor_table <- clinical_data %>%
+  filter(SubjectID %in% donors_65$SubjectID) %>%
+  select(SubjectID, Sex, AgeAtLastBirthDay, Ethnicity, Scriba2018ProgressorOrControl) %>%
+  mutate(Subject.ID = str_sub(SubjectID, 2))
+
+col_dates <- collection_dates %>%
+  filter(Subject.ID %in% donors_65$Subject.ID)
+
+supp_table <- left_join(col_dates, donor_table) %>%
+  group_by(sampleID, Subject.ID, Collection.date, Visit, Scriba2018ProgressorOrControl) %>%
+  distinct() %>%
+  arrange(Subject.ID, Collection.date) %>%
+  filter(!(Visit == "720")) %>%
+  filter(!(Visit == "I-C")) %>%
+  select(-sampleID, -SubjectID) %>%
+  mutate(
+    `TB Disease Stage` =
+      case_when(
+        Scriba2018ProgressorOrControl == "control" ~ "non-progressor",
+        Scriba2018ProgressorOrControl == "progressor" ~ "progressor"
+      )
+  )
+
+subj_levels <- supp_table %>%
+  arrange(Collection.date) %>%
+  distinct(Subject.ID) %>%
+  pull(Subject.ID) %>%
+  unique(.)
+supp_table$Subject.ID <- factor(supp_table$Subject.ID, levels = rev(subj_levels))
+```
+
+```{r define manual colors}
+# define manual colors
+sex_palette <- c("#1B9E77", "#D95F02")
+visit_palette <- c("#7570B3", "#E7298A", "#66A61E", "#E6AB02")
+age_palette <- c("#C6DBEF", "#9ECAE1", "#6BAED6", "#4292C6", "#2171B5", "#08519C", "#08306B")
+disease_palette <- c("#CCEBC5", "#6A3D9A")
+age_palette2 <- c("#EFEDF5", "#DADAEB", "#BCBDDC", "#9E9AC8", "#807DBA")
+```
+
+```{r acs timeline plot}
+timeline_plot <- ggplot(supp_table, aes(Collection.date, Subject.ID, group = Subject.ID)) +
+  geom_point(aes(Collection.date, Subject.ID)) + geom_line() +
+  theme_minimal() +
+  xlab("") +
+  theme(
+    legend.position = "none", axis.title.y = element_blank(),
+    axis.text.y = element_blank(),
+    axis.ticks.y = element_blank(),
+    axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1)
+  ) +
+  xlab("") 
+timeline_plot
+
+hm_sex <- ggplot(supp_table, aes(x = 1, Subject.ID, fill = Sex)) +
+  geom_tile(color = "black") +
+  theme_void() +
+  theme(
+    legend.position = "none", axis.title.x = element_blank(),
+    axis.text.x = element_blank(),
+    axis.ticks.x = element_blank(),
+    axis.text.y = element_text(size = 6),
+        plot.title = element_text(size=9)
+  ) +
+  scale_fill_manual(values = sex_palette, "Sex") +
+  ggtitle("Sex")
+
+hm_age <- ggplot(supp_table, aes(x = "1", Subject.ID, fill = as.factor(AgeAtLastBirthDay), group = as.factor(AgeAtLastBirthDay))) +
+  geom_tile(color = "black") +
+  theme_void() +
+  theme(
+    legend.position = "none", axis.title.y = element_blank(),
+    axis.text.y = element_blank(),
+    axis.ticks.y = element_blank(),
+    axis.title.x = element_blank(),
+    axis.text.x = element_blank(),
+    axis.ticks.x = element_blank(),
+        plot.title = element_text(size=9)
+  ) +
+  scale_fill_manual(values = age_palette, "AgeAtLastBirthDay") +
+  ggtitle("Age")
+
+hm_disease <- ggplot(supp_table, aes(x = "1", Subject.ID, fill = as.factor(Scriba2018ProgressorOrControl), group = as.factor(Scriba2018ProgressorOrControl))) +
+  geom_tile(color = "black") +
+  theme_void() +
+  theme(
+    legend.position = "none", axis.title.y = element_blank(),
+    axis.text.y = element_blank(),
+    axis.ticks.y = element_blank(),
+    axis.text.x = element_blank(),
+    axis.ticks.x = element_blank(),
+    axis.title.x = element_blank(),
+        plot.title = element_text(size=9)
+  ) +
+  scale_fill_manual(values = disease_palette, "Scriba2018ProgressorOrControl") +
+  ggtitle(paste0("TB status"))
+
+fig4a <- hm_sex + hm_age + hm_disease + timeline_plot + plot_layout(widths = c(0.25, 0.25, 0.25, 3.25))
+get_legend <- hm_sex / hm_age / hm_disease
+# ggsave("color_legend.pdf", get_legend, device = "pdf", width = 10, height = 18)
+```
+
+```{r import siscapa table, echo=FALSE, warning=FALSE}
+siscapa_samples <- read_csv("data/SISCAPA_table.csv") %>%
+  mutate(symptoms_long = str_replace_all(Sample.context, ",", ";")) %>%
+  mutate(date = parse_date(Date.of.Collection, format = "%m/%d/%y"))
+symptom_dates <- as_date(c(
+  "2011-05-04",
+  "2012-08-08",
+  "2013-02-22",
+  "2014-09-19"
+))
+pepseq_subset <- read_delim("data/PepSeq_subset.txt", "\t", col_names = F) %>%
+  mutate(pepseq_date = str_split_fixed(X1, "_", 4) %>% .[, 2] %>% str_replace_all(., "\\.", "/") %>%
+    parse_date(., "%m/%d/%Y")) %>%
+  mutate(pepseq_date2 = pepseq_date) %>%
+  left_join(siscapa_samples, ., by = c("date" = "pepseq_date")) %>%
+  select(date, pepseq_date2, symptoms_long) %>%
+  mutate(symptoms = case_when(
+    date %in% symptom_dates ~ "+",
+    !(date %in% symptom_dates) ~ "-"
+  )) %>%
+  mutate(pepseq_status = case_when(
+    date %in% pepseq_date2 ~ "+",
+    !(date %in% pepseq_date2) ~ "-"
+  )) %>%
+  mutate(sample_number = row_number()) %>%
+  rename(Date = date) %>%
+  select(sample_number, Date, pepseq_status, symptoms) %>%
+  mutate(Subject.ID = "2")
+
+pepseq_track_data <- pepseq_subset %>%
+  filter(pepseq_status == "+") %>%
+  mutate(Subject.ID = "1")
+```
+
+
+```{r timeline siscapa}
+timeline_plot_siscapa <- ggplot() +
+  geom_point(data = pepseq_subset, aes(Date, Subject.ID, group = Subject.ID), shape = 3) +
+  geom_point(
+    data = pepseq_track_data,
+    aes(Date, Subject.ID,
+      color = pepseq_status,
+      shape = as.factor(pepseq_status)
+    ), size = 2.5
+  ) +
+  geom_line(data = pepseq_subset, aes(Date, Subject.ID, group = Subject.ID)) +
+  theme_minimal() +
+  xlab("") +
+  geom_line(data = pepseq_track_data, aes(Date, Subject.ID, group = Subject.ID)) +
+  theme_minimal() +
+  xlab("") +
+  theme(
+    legend.position = "none", axis.title.y = element_blank(),
+    axis.text.y = element_blank(),
+    axis.ticks.y = element_blank(),
+    axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1)
+  ) +
+  xlab("") +
+  scale_x_date(date_labels = "%Y-%m", date_breaks = "6 month") +
+  scale_color_manual(values = "violet") +
+  scale_shape_manual(values = c(17, 17, 17, 17))
+timeline_plot_siscapa
+```
+
+```{r import myimmunity table, echo=FALSE}
+# Donor, sex, age, collection date, symptoms
+load("data/L.dat") # import samp_le names
+donors <- map_chr(L, ~ .x[[1]]) %>%
+  str_extract_all(., "^P\\d+") %>%
+  map_chr(., ~.x) %>%
+  str_extract_all(., "P\\d+") %>%
+  str_replace_all(., "P", "") %>%
+  map_chr(., ~.x) %>% # add a leading 0 to match the Excel table below
+  as.integer(.) %>%
+  formatC(., width = 2, format = "d", flag = "0") %>%
+  as.character(.) %>%
+  str_c("P", .)
+
+names(L) <- donors
+
+Lsamples <- map(L, ~ .x %>%
+  str_split_fixed(., "_", n = 4) %>%
+  .[, 2] %>%
+  parse_date(., format = "%m.%d.%y") %>%
+  sort() %>%
+  paste(., collapse = ", ") %>%
+  str_replace_all(., "\\.", "/")) %>%
+  bind_cols(.) %>%
+  pivot_longer(., cols = everything(), names_to = "Participant ID", values_to = "Collection Dates")
+
+
+myimmun <- read_excel("data/MyImmunity Deidentified Data (jaltin19-014)-2.xlsx")
+
+myimmun_focal <- myimmun %>%
+  rename(Subject.ID = `Participant ID`) %>%
+  filter(Subject.ID %in% donors) %>%
+  mutate(age_group = case_when(
+    Age <= 27 ~ "18-27",
+    Age > 27 & Age < 38 ~ "28-37",
+    Age >= 38 & Age < 48 ~ "38-47",
+    Age >= 48 & Age < 58 ~ "48-57",
+    Age >= 58 ~ "58+",
+  )) %>%
+  select(Subject.ID, Sex, age_group) %>%
+  left_join(., Lsamples, by = c("Subject.ID" = "Participant ID")) %>%
+  rename(Age = age_group)
+
+
+myimmun_focal_long <- bind_cols(
+  myimmun_focal$Subject.ID,
+  str_split_fixed(myimmun_focal$`Collection Dates`, ",", n = 20)
+) %>%
+  rename("Subject.ID" = ...1) %>%
+  pivot_longer(cols = -1, names_to = "d", values_to = "Collection.date") %>%
+  filter(!(Collection.date == "")) %>%
+  select(-2) %>%
+  mutate(Collection.date = parse_date(Collection.date)) %>%
+  left_join(myimmun_focal) %>%
+  arrange(Collection.date) %>%
+  mutate(`Age group` = as.factor(Age)) %>%
+  mutate(febrile = as_date(case_when(
+    Subject.ID == "P03" ~ "2019-10-11",
+    Subject.ID == "P10" ~ "2019-08-04",
+    Subject.ID == "P21" ~ "2019-07-03",
+    Subject.ID == "P24" ~ "2019-10-27",
+  )))
+
+subj_levels <- myimmun_focal_long %>%
+  distinct(Subject.ID) %>%
+  pull(Subject.ID)
+myimmun_focal_long$Subject.ID <- factor(myimmun_focal_long$Subject.ID, levels = rev(subj_levels))
+
+
+myimmun_focal_febrile <- myimmun_focal_long %>%
+  select(Subject.ID, febrile) %>%
+  filter(!is.na(febrile)) %>%
+  distinct(febrile, .keep_all = T)
+```
+
+```{r timeline plot MI}
+timeline_plot_MI <- ggplot() +
+  geom_point(data = myimmun_focal_long, aes(Collection.date, Subject.ID, group = Subject.ID)) +
+  geom_point(
+    data = myimmun_focal_febrile,
+    aes(febrile, Subject.ID,
+      color = febrile,
+      shape = as.factor(febrile)
+    ), size = 2.5
+  ) +
+  geom_line(data = myimmun_focal_long, aes(Collection.date, Subject.ID, group = Subject.ID)) +
+  theme_minimal() +
+  xlab("") +
+  theme(
+    legend.position = "none", axis.title.y = element_blank(),
+    axis.text.y = element_blank(),
+    axis.ticks.y = element_blank(),
+    axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1)
+  ) +
+  xlab("") +
+  scale_x_date(date_labels = "%Y-%m", date_breaks = "1 month") +
+  scale_color_date(low = "blue", high = "blue") +
+  scale_shape_manual(values = c(15, 15, 15, 15))
+timeline_plot_MI
+
+hm_sex_MI <- ggplot(myimmun_focal_long, aes(x = 1, Subject.ID, fill = Sex)) +
+  geom_tile(color = "black") +
+  theme_void() +
+  theme(
+    legend.position = "none", axis.title.x = element_blank(),
+    axis.text.x = element_blank(),
+    axis.ticks.x = element_blank(),
+    axis.text.y = element_text(size = 7),
+    plot.title = element_text(size=9)
+  ) +
+  scale_fill_manual(values = sex_palette, "Sex") +
+  ggtitle("Sex")
+hm_sex_MI
+
+hm_age_MI <- ggplot(myimmun_focal_long, aes(x = "1", Subject.ID, fill = as.factor(`Age group`), group = as.factor(`Age group`))) +
+  geom_tile(color = "black") +
+  theme_void() +
+  theme(
+    legend.position = "none", axis.title.y = element_blank(),
+    axis.text.y = element_blank(),
+    axis.ticks.y = element_blank(),
+    axis.title.x = element_blank(),
+    axis.text.x = element_blank(),
+    axis.ticks.x = element_blank(),
+    plot.title = element_text(size=9)
+  ) +
+  scale_fill_manual(values = age_palette2, "Age group") +
+  ggtitle("Age group")
+hm_age_MI
+
+fig4b <- hm_sex_MI + hm_age_MI + timeline_plot_MI + plot_layout(widths = c(0.2, 0.2, 2.6))
+```
+
+```{r arrange plots}
+fig4fin <- (fig4a | fig4b) / timeline_plot_siscapa + plot_layout(heights = unit(c(4.75, .85), c("in", "in")))
+# ggsave("figures/supplemental_figure_4.pdf", fig4fin, device = "pdf", width = 11, height = 7.75)
+fig4fin
+```

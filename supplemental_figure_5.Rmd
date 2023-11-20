@@ -1,0 +1,341 @@
+---
+title: "Supplemental figure 5"
+output: html_document
+---
+
+```{r}
+library(tidyverse)
+library(M3C)
+```
+
+```{r import library annots}
+PV2Tmeta <- read_tsv("data/PV2T_meta.tsv", col_types = "ccccccccc")
+
+# A table linking taxon id to the species (or taxon) name
+PV2species <- read_csv("data/PV2species.csv", col_names = F) %>%
+  set_names(c("Species", "annotation")) %>%
+  filter(!(annotation == "10566")) %>%
+  mutate(annotation = as.character(annotation))
+
+# Join the library meta file and species names
+PV2T_full_annot <- left_join(PV2species, PV2Tmeta,
+  by = c("annotation" = "SpeciesID")
+) %>%
+  rename(library_member = CodeName)
+```
+
+```{r import and filter Z scores}
+# Import log2 transformed Z scores
+progZscores <- read_csv("data/65donorZs.csv") %>%
+  rename(annotation = ...1)
+```
+
+```{r missing peps}
+# find any peptides where the min == max, ie no change in signal,
+# or "missing signal"
+missing_peptides <- progZscores %>%
+  pivot_longer(.,
+    cols = !annotation, names_to = "sampleID",
+    values_to = "Zscore"
+  ) %>%
+  group_by(annotation) %>%
+  mutate(pep_sum = sum(Zscore)) %>%
+  mutate(drop = case_when(
+    min(Zscore) == max(Zscore) ~ "drop"
+  )) %>%
+  filter(drop == "drop") %>%
+  distinct(annotation) %>%
+  pull(annotation)
+```
+
+```{r import subject meta}
+# read in a table of PCA factors
+subject_meta <- read_csv("data/pca_factors.csv") %>%
+  distinct(sampleID, .keep_all = T)
+sample_id_baseline <- subject_meta %>%
+  filter(Visit == 0) %>%
+  pull(sampleID)
+```
+
+```{r threshold Z scores}
+enrich_z_thresh <- c(3)
+# the imported Z scores have already been log2 transformed.
+
+# define function to filter peptides by z score threshold based on any sample
+# with a z score above the threshold
+get_thresh_df <- function(zdf, threshold) {
+  out <- zdf %>%
+    # drop missing peptides
+    filter(!(annotation %in% missing_peptides)) %>%
+    filter_at(vars(contains("S")), any_vars(. > threshold)) %>%
+    column_to_rownames("annotation")
+  out <- t(out) # adding a transpose to the Z output for pca
+  return(out)
+}
+progZscores_thresh <- map(enrich_z_thresh, ~ get_thresh_df(progZscores, .x))
+map_int(progZscores_thresh, ~ ncol(.x)) # just check num peptides in ea df
+```
+
+```{r select baseline samples in Z thresh}
+select_samples_Z <- function(zdf, samples) {
+  zdf_out <- zdf[(row.names(zdf) %in% samples), ]
+  return(zdf_out)
+}
+
+# select only the baseline samples in the z score df
+progZscores_thresh_baseline <- map(
+  progZscores_thresh,
+  ~ select_samples_Z(.x, sample_id_baseline)
+)
+```
+
+```{r get pcomps}
+# for all samples (all timepoints)
+pcs_all_samples <- map(progZscores_thresh, ~ prcomp(.x, scale. = T))
+
+# for baseline samples only
+pcs_baseline_samples <- map(
+  progZscores_thresh_baseline,
+  ~ prcomp(.x, scale. = T)
+)
+```
+
+```{r define pca functions}
+# scale pca data and add subject meta
+get_perc_var <- function(pc, meta_df) {
+  pc$percent_var <- pc$sdev^2 / sum(pc$sdev^2)
+  percent_var_df <- t(data.frame(t(pc$x) * pc$percent_var))
+  pca_df <- bind_cols(meta_df, percent_var_df)
+  return(pca_df)
+}
+
+plot_pca <- function(pca_df, var_vis, man_shape = NULL, man_color = NULL) {
+  var_vis <- enquo(var_vis)
+  if (!is.null(man_shape) & is.null(man_color)) {
+    p <- ggplot(pca_df, aes(
+      x = PC1, y = PC2, color = as.factor(!!var_vis),
+      shape = as.factor(!!var_vis)
+    )) +
+      geom_point(size = 1.9) +
+      scale_shape_manual(values = man_shape)
+  }
+  if (!is.null(man_shape) & !is.null(man_color)) {
+    p <- ggplot(pca_df, aes(
+      x = PC1, y = PC2, color = as.factor(!!var_vis),
+      shape = as.factor(!!var_vis)
+    )) +
+      geom_point(size = 1.9) +
+      scale_shape_manual(values = man_shape) +
+      scale_color_manual(values = man_color)
+  }
+
+  if (is.null(man_shape) & !is.null(man_color)) {
+    p <- ggplot(pca_df, aes(
+      x = PC1, y = PC2, color = as.factor(!!var_vis)
+    )) +
+      geom_point(size = 1.9) +
+      scale_color_manual(values = man_color)
+  }
+
+  if (is.null(man_shape) & is.null(man_color)) {
+    p <- ggplot(pca_df, aes(
+      x = PC1, y = PC2, color = as.factor(!!var_vis)
+    )) +
+      geom_point(size = 1.9)
+  }
+
+  return(p)
+}
+```
+
+```{r define man plot scales}
+# define manual shapes donor
+manscale <- rep(seq(0, 25), 3)[1:65]
+
+# define manual colors
+sex_palette <- c("#1B9E77", "#D95F02")
+visit_palette <- c("#7570B3", "#E7298A", "#66A61E", "#E6AB02")
+age_palette <- c(
+  "#C6DBEF", "#9ECAE1", "#6BAED6", "#4292C6",
+  "#2171B5", "#08519C", "#08306B"
+)
+disease_palette <- c("#CCEBC5", "#6A3D9A")
+```
+
+```{r calc percent var and plot}
+pca_df_all <- map(pcs_all_samples, ~ get_perc_var(.x, subject_meta))
+
+pca_df_baseline <- map(
+  pcs_baseline_samples,
+  ~ get_perc_var(.x, filter(subject_meta, Visit == 0))
+)
+```
+
+### All timepoints PCA / log2(Z score) threshold: 3
+
+#### SubjectID
+```{r}
+pca_plot_map_subid <- map(pca_df_all, ~ plot_pca(
+  .x,
+  var_vis = SubjectID, man_shape = manscale
+))
+pca_subject <- map2(pca_plot_map_subid, enrich_z_thresh, ~ .x +
+  theme_bw() + theme(legend.position = "none"))
+pca_subject <- pca_subject[[1]]
+pca_subject
+```
+
+#### Visit
+```{r}
+pca_plot_map_vis <- map(pca_df_all, ~ plot_pca(.x,
+  var_vis = Visit,
+  man_color = visit_palette,
+  man_shape = manscale
+))
+pca_visit <- map2(pca_plot_map_vis, enrich_z_thresh, ~ .x +
+  theme_bw() + theme(legend.position = "none"))
+pca_vist <- pca_visit[[1]]
+pca_visit
+```
+#### Sex
+```{r}
+pca_plot_map_sex <- map(pca_df_all, ~ plot_pca(
+  filter(.x, Visit == 0),
+  var_vis = Sex,
+  man_color = sex_palette
+))
+pca_sex <- map2(pca_plot_map_sex, enrich_z_thresh, ~ .x +
+  theme_bw() + theme(legend.position = "none"))
+pca_sex <- pca_sex[[1]]
+pca_sex
+```
+#### Age
+```{r}
+pca_plot_map_age <- map(
+  pca_df_all,
+  ~ plot_pca(
+    filter(.x, Visit == 0),
+    var_vis = AgeAtLastBirthDay,
+    man_color = age_palette
+  )
+)
+pca_age <- map2(pca_plot_map_age, enrich_z_thresh, ~ .x +
+  theme_bw() + theme(legend.position = "none"))
+pca_age <- pca_age[[1]]
+pca_age
+```
+#### Disease
+```{r}
+pca_plot_map_disease <- map(
+  pca_df_all, ~ plot_pca(
+    filter(.x, Visit == 0),
+    var_vis = Scriba2018ProgressorOrControl,
+    man_color = disease_palette
+  )
+)
+pca_disease <- map2(pca_plot_map_disease, enrich_z_thresh, ~ .x +
+  theme_bw() + theme(legend.position = "none"))
+pca_disease <- pca_disease[[1]]
+pca_disease
+```
+
+### UMAP
+
+```{r umap functions}
+get_progZscores_for_umap <- function(progZscores, threshold) {
+  # drop missing peptides
+  df <- progZscores %>%
+    filter(!(annotation %in% missing_peptides)) %>%
+    filter_at(vars(contains("S")), any_vars(. > threshold)) %>%
+    column_to_rownames("annotation")
+  return(df)
+}
+
+get_umap_df <- function(um, meta_df) {
+  out <- bind_cols(um$data, meta_df)
+}
+
+plot_umap <- function(umap_df, var_vis, man_shape = NULL, man_color = NULL) {
+  var_vis <- enquo(var_vis)
+  if (!is.null(man_shape) & is.null(man_color)) {
+    p <- ggplot(umap_df, aes(
+      x = X1, y = X2, color = as.factor(!!var_vis),
+      shape = as.factor(!!var_vis)
+    )) +
+      geom_point(size = 1.9) +
+      scale_shape_manual(values = man_shape) +
+      xlab("UMAP1") +
+      ylab("UMAP2")
+  }
+
+  if (!is.null(man_shape) & !is.null(man_color)) {
+    p <- ggplot(umap_df, aes(
+      x = X1, y = X2, color = as.factor(!!var_vis),
+      shape = as.factor(!!var_vis)
+    )) +
+      geom_point(size = 1.9) +
+      scale_shape_manual(values = man_shape) +
+      scale_color_manual(values = man_color) +
+      xlab("UMAP1") +
+      ylab("UMAP2")
+  }
+
+  if (is.null(man_shape) & !is.null(man_color)) {
+    p <- ggplot(umap_df, aes(
+      x = X1, y = X2, color = as.factor(!!var_vis)
+    )) +
+      geom_point(size = 1.9) +
+      scale_color_manual(values = man_color) +
+      xlab("UMAP1") +
+      ylab("UMAP2")
+  }
+
+  if (is.null(man_shape) & is.null(man_color)) {
+    p <- ggplot(umap_df, aes(
+      x = X1, y = X2, color = as.factor(!!var_vis)
+    )) +
+      geom_point(size = 1.9) +
+      xlab("UMAP1") +
+      ylab("UMAP2")
+  }
+
+  return(p)
+}
+```
+
+#### UMAP / log2(Z score) threshold: 3
+```{r}
+manscale <- rep(seq(0, 25), 3)[1:65]
+progZscores_for_umap <- get_progZscores_for_umap(
+  progZscores = progZscores, threshold = 3)
+umap_progZ <- umap(progZscores_for_umap)
+umap_df <- get_umap_df(umap_progZ, subject_meta)
+umap_subject <- plot_umap(
+  umap_df = umap_df, var_vis = SubjectID, man_shape = manscale) + theme_bw() +
+  theme(legend.position = "none")
+umap_visit <- plot_umap(
+  umap_df = umap_df, var_vis = Visit, man_color = visit_palette,
+  man_shape = manscale
+) + theme_bw() +
+  theme(legend.position = "none")
+
+# plot UMAP with only timepoint 0 samples for sex/age/disease
+umap_sex <- plot_umap(umap_df = filter(umap_df, Visit == 0), var_vis = Sex, man_color = sex_palette) + theme_bw() +
+  theme(legend.position = "none")
+
+umap_age <- plot_umap(umap_df = filter(umap_df, Visit == 0), var_vis = AgeAtLastBirthDay, man_color = age_palette) + theme_bw() +
+  theme(legend.position = "none")
+
+umap_disease <- plot_umap(umap_df = filter(umap_df, Visit == 0), var_vis = Scriba2018ProgressorOrControl, man_color = disease_palette) + theme_bw() +
+  theme(legend.position = "none")
+```
+
+```{r}
+top_umap <- umap_subject + umap_visit + umap_sex + umap_age + umap_disease + plot_layout(ncol = 5)
+
+bottom_pca <- pca_subject + pca_visit + pca_sex + pca_age + pca_disease + plot_layout(ncol = 5)
+
+whole_fig5 <- top_umap / bottom_pca
+# note UMAP seed not set, so cluster projections from run-to-run will be slightly different.
+# ggsave("figures/supplemental_figure5_umap_pca.pdf", whole_fig5, device = "pdf", width = 20, height = 8)
+```

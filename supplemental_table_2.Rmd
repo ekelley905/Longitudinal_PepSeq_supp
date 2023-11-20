@@ -1,0 +1,114 @@
+---
+title: "Supplemental table 2"
+output: html_document
+---
+
+```{r}
+library(tidyverse)
+library(seqinr)
+```
+
+```{r make CE long table}
+ce_table <- read_csv("data/CEbyPtable_byVAEs.csv", na = "0", col_types = "c") %>%
+  rename(annotation = ...1) 
+
+ce_table_long <- ce_table %>%
+  pivot_longer(., cols = !annotation, names_to = "interval", values_to = "LE_peptides") %>%
+  mutate(LE_sep = strsplit(LE_peptides, "/")) %>%
+  unnest(LE_sep) %>%
+  filter(!is.na(LE_sep))
+
+# these are -log10 adj.p vals
+ce_p <- read_csv("data/Ptable.csv", col_types = str_c("c", rep("d", 195))) %>%
+  rename(annotation = ...1)
+
+ce_p_long <- ce_p %>%
+  pivot_longer(., cols = !annotation, names_to = "interval", values_to = "-log10_adj.p")
+
+# check to see if the col names are the same between tables - Yes
+all(colnames(ce_table) == colnames(ce_p))
+```
+
+```{r make library table}
+PV2Tmeta_with_IDs <- read_csv("data/PV2T_meta_with_IDs.csv", col_types = "ccccccccc") 
+
+PV2species <- read_csv("data/PV2species.csv", col_names = F) %>%
+  set_names(c("Species", "annotation")) %>%
+  filter(!(annotation == "10566")) %>%
+  mutate(annotation = as.character(annotation))
+
+PV2T_full_annot <- left_join(PV2species, PV2Tmeta_with_IDs, by=c("annotation"="SpeciesID")) %>%
+  rename(library_member = CodeName)
+
+```
+
+```{r join CEtable and lib table}
+# ce_table_lib is the annotated table of leading edge peptides
+ce_table_lib <-  left_join(ce_table_long, ce_p_long) %>%
+  left_join(., PV2T_full_annot, by=c("LE_sep"="library_member", "annotation"="annotation"))
+```
+
+```{r import iedb}
+iedb <- read_csv("data/epitope_table_export_1662584662.csv", skip = 1, show_col_types = FALSE)
+names(iedb)[3] <- "peptide_sequence"
+iedb_pep <- iedb  %>%
+  filter(str_length(peptide_sequence) > 8) %>%
+  pull(peptide_sequence)
+```
+
+
+```{r match query}
+get_iedb_match <- function(le_pep){
+  out <- c()
+  if(!is.na(le_pep)) {
+  match <- iedb_pep[grepl(paste(substring(le_pep, 1:22, 9:30), collapse = "|"), iedb_pep)]
+  out <- append(out, match)
+  }
+  return(out)
+}
+
+# only search for matches for unique peptides, results in 4791 unique peptides
+ce_table_lib_unq_pep <- unique(ce_table_lib$Peptide)
+
+# saveRDS(annotated_peps_iedb, "data/annotated_peps_iedb.RDS")
+annotated_peps_iedb <- readRDS("data/annotated_peps_iedb.RDS")
+
+names(annotated_peps_iedb) <- ce_table_lib_unq_pep
+
+# all of the matches. Peptide is the PepSeq peptide and iedb is the match
+annotated_peps_df <- stack(annotated_peps_iedb) %>%
+  set_names(c("iedb_peptide", "Peptide"))
+```
+
+```{r}
+ce_table_lib_iedb <- full_join(ce_table_lib, annotated_peps_df) %>%
+  left_join(., iedb, by=c("iedb_peptide" = "peptide_sequence")) %>%
+  mutate(Subject_ID = str_sub(interval, 1,7)) %>%
+  mutate(Interval = str_extract_all(interval, "D\\d+") %>%
+  map(., ~paste(.x[[1]], .x[[2]], sep=","))) %>%
+  mutate(Interval = unlist(Interval)) %>%
+  select(Subject_ID, Interval, Species, `-log10_adj.p`, Peptide, iedb_peptide, ID)
+
+# write_csv(ce_table_lib_iedb, "tables/ce_table_lib_iedb.csv")
+```
+
+```{r}
+supp_table2 <- ce_table_lib_iedb %>%
+  select(Subject_ID, Interval,`-log10_adj.p`, Species, ID, Peptide, iedb_peptide) %>%
+  mutate(Interval = str_replace(Interval, ",", "-")) %>%
+  mutate(`PSEA adjusted P value`= round(`-log10_adj.p`, 3)) %>%
+  mutate(Subject_ID = str_sub(Subject_ID, start=2)) %>%
+  rename(Protein_ID = ID) %>%
+  mutate(`Peptide Sequence` = str_sub(Peptide, 1,30)) %>%
+  mutate(`IEDB match` = case_when(
+    is.na(iedb_peptide) ~ "no",
+    !(is.na(iedb_peptide)) ~ "yes"
+  )) %>%
+  rename(c(`Subject ID`=Subject_ID, `Protein ID` = Protein_ID)) %>%
+  select(`Subject ID`, Interval, `PSEA adjusted P value`, Species, `Protein ID`, `Peptide Sequence`, `IEDB match`) %>%
+  group_by(`Subject ID`, Interval) %>%
+  distinct(`Peptide Sequence`, .keep_all = T)
+
+# write_csv(supp_table2, "tables/supplemental_table_2.csv")
+```
+
